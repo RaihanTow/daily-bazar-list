@@ -36,8 +36,11 @@ CREATE TABLE TG$VALID_STATUS_TAB (
   ACCESSCODE    VARCHAR2(30)  DEFAULT 'GLOBAL' NOT NULL,
   STAMPUSER     VARCHAR2(255) NOT NULL,
   STAMPDATE     TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL,
+  STAMPSESSION  VARCHAR2(4000) DEFAULT SYS_CONTEXT('APEX$SESSION','APP_SESSION'),
   CREATEDDATE   TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL,
   CREATEDBY     VARCHAR2(255) NOT NULL,
+  CREATESESSION VARCHAR2(4000) DEFAULT SYS_CONTEXT('APEX$SESSION','APP_SESSION'),
+  APPID         VARCHAR2(100)  DEFAULT SYS_CONTEXT('APEX$SESSION','APP_ID'),
   VERSIONNO     NUMBER(10)    DEFAULT 1 NOT NULL,
   ISDELETED     CHAR(1)       DEFAULT 'N' NOT NULL,
   CONSTRAINT TG$VALID_STATUS_TAB_PK  PRIMARY KEY (STATUSCODE),
@@ -59,9 +62,14 @@ Every table carries these columns:
 |---|---|---|
 | `STAMPUSER` | `VARCHAR2(255)` | Last user who changed the row |
 | `STAMPDATE` | `TIMESTAMP WITH TIME ZONE` | Last change timestamp |
+| `STAMPSESSION` | `VARCHAR2(4000)` | APEX session (`APP_SESSION`) of the last change |
 | `CREATEDDATE` | `TIMESTAMP WITH TIME ZONE` | Row creation timestamp |
 | `CREATEDBY` | `VARCHAR2(255)` | Row creator |
+| `CREATESESSION` | `VARCHAR2(4000)` | APEX session (`APP_SESSION`) that created the row |
+| `APPID` | `VARCHAR2(100)` | APEX application ID (`APP_ID`) the row was created through |
 | `ACCESSCODE` | `VARCHAR2(30)` | Household/tenant discriminator; `GLOBAL` on setup rows |
+
+The APEX values are available as column `DEFAULT`s (`SYS_CONTEXT('APEX$SESSION', ...)`) for direct inserts, and are re-applied by the audit trigger. Outside an APEX session they are `NULL`, while `STAMPUSER`/`CREATEDBY` fall back to `USER`.
 
 These are maintained by one `BEFORE INSERT OR UPDATE` trigger per table.
 
@@ -127,10 +135,11 @@ If per-tenant setup overrides are needed later, add a dedicated override table r
 
 ## 7. Audit and triggers
 
-- One `BEFORE INSERT OR UPDATE` trigger per table sets `STAMPUSER`, `STAMPDATE`, `CREATEDBY`, `CREATEDDATE`, `VERSIONNO` and, on data tables, `RSN`/`UUID`. Valid-table triggers also assign `<ENTITY>CODE` from `TG$VALID_<ENTITY>_SEQ`.
+- One `BEFORE INSERT OR UPDATE` trigger per table sets `STAMPUSER`, `STAMPDATE`, `STAMPSESSION`, `CREATEDBY`, `CREATEDDATE`, `CREATESESSION`, `APPID`, `VERSIONNO` and, on data tables, `RSN`/`UUID`. Valid-table triggers also assign `<ENTITY>CODE` from `TG$VALID_<ENTITY>_SEQ`.
 - Valid tables get the same audit trigger (`TG$VALID_<ENTITY>_TAB_TRG1`); their setup attributes (`DISPLAYORDER`, `ISACTIVE`, `ISDEFAULT`) are managed by the application.
 - The current user is read from `SYS_CONTEXT('APEX$SESSION','APP_USER')`, falling back to `USER` outside APEX.
-- On update, `CREATEDBY`/`CREATEDDATE`/`RSN`/`UUID`/`ACCESSCODE` are preserved and `VERSIONNO` is incremented.
+- The APEX session identity is read from `SYS_CONTEXT('APEX$SESSION','APP_ID')` and `SYS_CONTEXT('APEX$SESSION','APP_SESSION')`. On insert `APPID`/`CREATESESSION`/`STAMPSESSION` are filled when the caller did not supply them.
+- On update, `CREATEDBY`/`CREATEDDATE`/`CREATESESSION`/`APPID`/`RSN`/`UUID`/`ACCESSCODE` are preserved, `STAMPSESSION` is refreshed from the current session and `VERSIONNO` is incremented.
 - `TG$ITEM_TAB_TRG2` writes a JSON snapshot to `TG$ITEM_HISTORY_TAB` on insert/update/delete.
 
 ## 8. Soft delete
