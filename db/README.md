@@ -4,26 +4,56 @@ Oracle Database design for the **Twogether** mobile-first household wish-list ap
 
 ## 1. Naming conventions
 
-All database objects use the `TG$` prefix.
+All database objects use the `TG$` prefix and follow `TG$<ENTITY>_<OBJECT_TYPE>`.
 
 | Object | Pattern | Example |
 |---|---|---|
-| Table | `TG$<ENTITY>_TAB<NNN>` | `TG$ITEM_TAB001` |
-| Sequence | `TG$<ENTITY>_SEQ<NNN>` | `TG$ITEM_SEQ001` |
-| View | `TG$<ENTITY>_VW<NNN>` | `TG$ITEM_VW001` |
+| Table | `TG$<ENTITY>_TAB` | `TG$ITEM_TAB` |
+| Valid / lookup table | `TG$VALID_<ENTITY>_TAB` | `TG$VALID_STATUS_TAB` |
+| Sequence | `TG$<ENTITY>_SEQ` | `TG$ITEM_SEQ` |
+| View | `TG$<ENTITY>_VW` | `TG$ITEM_VW` |
 | Package | `TG$<ENTITY>_PKG` | `TG$ITEM_PKG` |
 | Procedure | `TG$<ENTITY>_PRC` | `TG$ITEM_PRC` |
 | Function | `TG$<ENTITY>_FUN` | `TG$ITEM_FUN` |
-| Trigger | `TG$<ENTITY>_TAB<NNN>_TRG<M>` | `TG$ITEM_TAB001_TRG1` |
-| Index | `TG$<ENTITY>_TAB<NNN>_IX<M>` | `TG$ITEM_TAB001_IX1` |
-| PK / UK / FK / CK | `<table>_PK`, `<table>_UK<M>`, `<table>_FK<M>`, `<table>_CK<M>` | `TG$ITEM_TAB001_PK` |
+| Trigger | `TG$<ENTITY>_TAB_TRG<M>` | `TG$ITEM_TAB_TRG1` |
+| Index | `TG$<ENTITY>_TAB_IX<M>` | `TG$ITEM_TAB_IX1` |
+| PK / UK / FK / CK | `<table>_PK`, `<table>_UK<M>`, `<table>_FK<M>`, `<table>_CK<M>` | `TG$ITEM_TAB_PK` |
 | Type | `TG$<ENTITY>_TYP` | `TG$ITEM_TYP` |
 | Synonym | `TG$<ENTITY>_SYN` | `TG$ITEM_SYN` |
-| Materialized view | `TG$<ENTITY>_MV<NNN>` | `TG$ITEM_MV001` |
+| Materialized view | `TG$<ENTITY>_MV` | `TG$ITEM_MV` |
 
-**Assumption:** the 3-digit number is appended after the type suffix (`_TAB001`, `_SEQ001`). If you prefer `_TAB_001`, we can rename globally.
+**Valid tables** carry a numeric `<ENTITY>CODE` (primary key, assigned from `TG$VALID_<ENTITY>_SEQ`) and a unique `<ENTITY>DESC` (display text), plus the same standard columns as every other table (audit, `UUID`, `ACCESSCODE`, `DISPLAYORDER`, `ISACTIVE`, `ISDEFAULT`, `ISDELETED`). Entity-specific attributes may be added when the lookup needs them: `TG$VALID_PRIORITY_TAB` also keeps `PRIORITYNO`, `COLORCODE` and `ICONCODE`.
+
+```sql
+CREATE TABLE TG$VALID_STATUS_TAB (
+  STATUSCODE    NUMBER(19)    NOT NULL,
+  STATUSDESC    VARCHAR2(200) NOT NULL,
+  DESCRIPTION   VARCHAR2(4000),
+  DISPLAYORDER  NUMBER(10)    DEFAULT 0 NOT NULL,
+  ISACTIVE      CHAR(1)       DEFAULT 'Y' NOT NULL,
+  ISDEFAULT     CHAR(1)       DEFAULT 'N' NOT NULL,
+  UUID          RAW(16)       DEFAULT SYS_GUID() NOT NULL,
+  ACCESSCODE    VARCHAR2(30)  DEFAULT 'GLOBAL' NOT NULL,
+  STAMPUSER     VARCHAR2(255) NOT NULL,
+  STAMPDATE     TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL,
+  CREATEDDATE   TIMESTAMP WITH TIME ZONE DEFAULT SYSTIMESTAMP NOT NULL,
+  CREATEDBY     VARCHAR2(255) NOT NULL,
+  VERSIONNO     NUMBER(10)    DEFAULT 1 NOT NULL,
+  ISDELETED     CHAR(1)       DEFAULT 'N' NOT NULL,
+  CONSTRAINT TG$VALID_STATUS_TAB_PK  PRIMARY KEY (STATUSCODE),
+  CONSTRAINT TG$VALID_STATUS_TAB_UK1 UNIQUE (UUID),
+  CONSTRAINT TG$VALID_STATUS_TAB_UK2 UNIQUE (STATUSDESC),
+  CONSTRAINT TG$VALID_STATUS_TAB_CK1 CHECK (ISACTIVE  IN ('Y','N')),
+  CONSTRAINT TG$VALID_STATUS_TAB_CK2 CHECK (ISDEFAULT IN ('Y','N')),
+  CONSTRAINT TG$VALID_STATUS_TAB_CK3 CHECK (ISDELETED IN ('Y','N'))
+);
+```
+
+`TG$VALID_STATUS_TAB_TRG1` assigns `STATUSCODE` from `TG$VALID_STATUS_SEQ` when it is not supplied.
 
 ## 2. Required columns on every table
+
+Every table carries these columns:
 
 | Column | Type | Purpose |
 |---|---|---|
@@ -43,14 +73,14 @@ These are maintained by one `BEFORE INSERT OR UPDATE` trigger per table.
 | `VERSIONNO` | `NUMBER(10)` | All tables | Optimistic locking; incremented by trigger |
 | `ISDELETED` | `CHAR(1)` | All tables | Soft delete (`Y`/`N`) |
 | `DELETEDDATE`, `DELETEDBY` | `TIMESTAMP WITH TIME ZONE`, `VARCHAR2(255)` | Data tables | Audit of soft delete |
-| `ISACTIVE` | `CHAR(1)` | Setup tables | Enable/disable a lookup value |
-| `ISDEFAULT` | `CHAR(1)` | Setup tables | Default lookup value |
-| `SORTNO` | `NUMBER(10)` | Setup tables | Display order |
-| `STATUSCODE` | `VARCHAR2(30)` | Data tables | Lifecycle state (FK to `TG$STATUS_TAB001`) |
+| `ISACTIVE` | `CHAR(1)` | Setup tables | Enable/disable a value |
+| `ISDEFAULT` | `CHAR(1)` | Setup tables | Default value |
+| `DISPLAYORDER` | `NUMBER(10)` | Setup tables | Display order |
+| `STATUSCODE` | `NUMBER(19)` | Data tables | Lifecycle state (FK to `TG$VALID_STATUS_TAB.STATUSCODE`) |
 | `SRC_SYSTEM`, `SRC_ID` | `VARCHAR2(30)`, `VARCHAR2(100)` | Optional | Integration lineage |
 | `HASH` | `VARCHAR2(64)` | Optional | Change detection for mobile sync |
 | `LOCALE`, `TIMEZONE`, `CURRENCYCODE` | `VARCHAR2` | Optional | Localisation |
-| `EFFECTIVE_FROM`, `EFFECTIVE_TO` | `DATE` | Optional | Validity window for setup rows |
+| `EFFECTIVE_FROM`, `EFFECTIVE_TO` | `DATE` | Optional | Validity window |
 
 **Why not UUID as the primary key?** Oracle indexes on random `RAW(16)` values fragment and cluster poorly. Keep the numeric `RSN` as PK and `UUID` as a unique alternate key.
 
@@ -58,7 +88,9 @@ These are maintained by one `BEFORE INSERT OR UPDATE` trigger per table.
 
 | Key | Used by | Meaning |
 |---|---|---|
-| `CODE` | Setup tables | Stable, human-readable business key. Portable across environments. |
+| `<ENTITY>CODE` | Valid tables | Numeric surrogate PK generated by `TG$VALID_<ENTITY>_SEQ`; foreign keys store this value. |
+| `<ENTITY>DESC` | Valid tables | Unique, human-readable business key used for display and seeding. |
+| `SETTINGCODE` | `TG$SETTING_TAB` | Stable, human-readable settings key. |
 | `RSN` | Data tables | Record Serial Number — compact numeric surrogate PK from a `_SEQ` sequence. |
 | `UUID` | All tables | Environment-independent unique ID for sync, import and external references. |
 | Business code (`ACCESSCODE`, `MEMBERCODE`, `LISTCODE`, `ITEMCODE`) | Data tables | Human-friendly unique key scoped by `ACCESSCODE`, useful for DML and imports. |
@@ -67,37 +99,39 @@ These are maintained by one `BEFORE INSERT OR UPDATE` trigger per table.
 
 | Table | Type | PK | Purpose |
 |---|---|---|---|
-| `TG$STATUS_TAB001` | Setup | `CODE` | Lifecycle statuses (ACTIVE, DONE, CANCELLED, ARCHIVED) |
-| `TG$PRIORITY_TAB001` | Setup | `CODE` | Priority levels with colour/icon |
-| `TG$UOM_TAB001` | Setup | `CODE` | Units of measure |
-| `TG$CATEGORY_TAB001` | Setup | `CODE` | Item categories |
-| `TG$ROLETYPE_TAB001` | Setup | `CODE` | Household roles (OWNER, MEMBER) |
-| `TG$SETTING_TAB001` | Setup | `CODE` | Application settings (key/value) |
-| `TG$ACCESS_TAB001` | Data | `RSN` | Household/couple access group |
-| `TG$MEMBER_TAB001` | Data | `RSN` | Members of a household |
-| `TG$LIST_TAB001` | Data | `RSN` | A shopping/wish list |
-| `TG$ITEM_TAB001` | Data | `RSN` | Wish-list items with priority and due date |
-| `TG$ITEM_HISTORY_TAB001` | Data | `RSN` | Change history for items (JSON snapshots) |
+| `TG$VALID_STATUS_TAB` | Valid | `STATUSCODE` | Lifecycle statuses (ACTIVE, DONE, CANCELLED, ARCHIVED) |
+| `TG$VALID_PRIORITY_TAB` | Valid | `PRIORITYCODE` | Priority levels |
+| `TG$VALID_UOM_TAB` | Valid | `UOMCODE` | Units of measure |
+| `TG$VALID_CATEGORY_TAB` | Valid | `CATEGORYCODE` | Item categories |
+| `TG$VALID_ROLETYPE_TAB` | Valid | `ROLETYPECODE` | Household roles (OWNER, MEMBER) |
+| `TG$SETTING_TAB` | Setup | `SETTINGCODE` | Application settings (key/value) |
+| `TG$ACCESS_TAB` | Data | `RSN` | Household/couple access group |
+| `TG$MEMBER_TAB` | Data | `RSN` | Members of a household |
+| `TG$LIST_TAB` | Data | `RSN` | A shopping/wish list |
+| `TG$ITEM_TAB` | Data | `RSN` | Wish-list items with priority and due date |
+| `TG$ITEM_HISTORY_TAB` | Data | `RSN` | Change history for items (JSON snapshots) |
 
 ## 6. ACCESSCODE and security
 
 `ACCESSCODE` identifies the couple/household that owns a row.
 
-- Setup tables default to `GLOBAL` so configuration is shared.
-- Data tables must always carry the owning `ACCESSCODE`, with an FK to `TG$ACCESS_TAB001(ACCESSCODE)`.
+- Valid tables are global reference data and default to `ACCESSCODE = 'GLOBAL'`.
+- `TG$SETTING_TAB` defaults to `GLOBAL` so configuration is shared.
+- Data tables must always carry the owning `ACCESSCODE`, with an FK to `TG$ACCESS_TAB(ACCESSCODE)`.
 - Enforce isolation with either:
   - a VPD/RLS policy on data tables, or
   - an APEX authorization + `WHERE ACCESSCODE = :APP_ACCESSCODE` in every view/query.
 - Never let APEX users query base tables directly; expose filtered views or packages.
 
-If per-tenant setup overrides are needed later, change setup PKs to `(CODE, ACCESSCODE)` or add a dedicated override table.
+If per-tenant setup overrides are needed later, add a dedicated override table rather than putting tenant-specific rows in a valid table.
 
 ## 7. Audit and triggers
 
-- One `BEFORE INSERT OR UPDATE` trigger per table sets `STAMPUSER`, `STAMPDATE`, `CREATEDBY`, `CREATEDDATE`, `VERSIONNO` and, on data tables, `RSN`/`UUID`.
+- One `BEFORE INSERT OR UPDATE` trigger per table sets `STAMPUSER`, `STAMPDATE`, `CREATEDBY`, `CREATEDDATE`, `VERSIONNO` and, on data tables, `RSN`/`UUID`. Valid-table triggers also assign `<ENTITY>CODE` from `TG$VALID_<ENTITY>_SEQ`.
+- Valid tables get the same audit trigger (`TG$VALID_<ENTITY>_TAB_TRG1`); their setup attributes (`DISPLAYORDER`, `ISACTIVE`, `ISDEFAULT`) are managed by the application.
 - The current user is read from `SYS_CONTEXT('APEX$SESSION','APP_USER')`, falling back to `USER` outside APEX.
 - On update, `CREATEDBY`/`CREATEDDATE`/`RSN`/`UUID`/`ACCESSCODE` are preserved and `VERSIONNO` is incremented.
-- `TG$ITEM_TAB001_TRG2` writes a JSON snapshot to `TG$ITEM_HISTORY_TAB001` on insert/update/delete.
+- `TG$ITEM_TAB_TRG2` writes a JSON snapshot to `TG$ITEM_HISTORY_TAB` on insert/update/delete.
 
 ## 8. Soft delete
 
@@ -120,5 +154,8 @@ Run DDL as the application schema owner. Setup DML must run before sample data b
 ## 10. Assumptions and next steps
 
 - Assumes Oracle 12.2+ (128-character object names, `JSON_OBJECT`) and APEX 20+.
+- Valid tables use a numeric `<ENTITY>CODE` generated by `TG$VALID_<ENTITY>_SEQ`, plus `<ENTITY>DESC` as the unique human-readable key and the same standard columns as other tables.
+- `SORTNO` is named `DISPLAYORDER` throughout the schema.
+- `TG$SETTING_TAB.SETTINGCODE` stays a text key because settings are looked up by name.
 - Not included yet: VPD policy package, APEX application, grants/synonyms, unit tests, migration tooling (Flyway/Liquibase).
 - Ask before using `TIMESTAMP WITH TIME ZONE` vs `DATE` if your APEX version or DBA standard differs.

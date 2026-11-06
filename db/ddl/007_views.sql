@@ -5,25 +5,25 @@
 SET DEFINE OFF;
 
 -- ----------------------------------------------------------------------------
--- TG$PRIORITY_VW001 - active priority lookup
+-- TG$VALID_PRIORITY_VW - active priority lookup
 -- ----------------------------------------------------------------------------
-CREATE OR REPLACE VIEW TG$PRIORITY_VW001 AS
-SELECT CODE,
-       DISPLAYNAME,
+CREATE OR REPLACE VIEW TG$VALID_PRIORITY_VW AS
+SELECT PRIORITYCODE,
+       PRIORITYDESC,
        DESCRIPTION,
        PRIORITYNO,
        COLORCODE,
        ICONCODE,
-       SORTNO,
+       DISPLAYORDER,
        ISDEFAULT
-FROM   TG$PRIORITY_TAB001
+FROM   TG$VALID_PRIORITY_TAB
 WHERE  ISACTIVE  = 'Y'
 AND    ISDELETED = 'N';
 
 -- ----------------------------------------------------------------------------
--- TG$ITEM_VW001 - item with joined lookup descriptions
+-- TG$ITEM_VW - item with joined lookup descriptions
 -- ----------------------------------------------------------------------------
-CREATE OR REPLACE VIEW TG$ITEM_VW001 AS
+CREATE OR REPLACE VIEW TG$ITEM_VW AS
 SELECT i.RSN,
        i.ACCESSCODE,
        i.ITEMCODE,
@@ -33,16 +33,18 @@ SELECT i.RSN,
        l.LISTCODE,
        l.LISTNAME,
        i.CATEGORYCODE,
-       c.DISPLAYNAME              AS CATEGORYNAME,
+       c.CATEGORYDESC,
        i.PRIORITYCODE,
-       p.DISPLAYNAME              AS PRIORITYNAME,
+       p.PRIORITYDESC,
        p.PRIORITYNO,
        p.COLORCODE                AS PRIORITYCOLOR,
+       p.ICONCODE                 AS PRIORITYICON,
        i.STATUSCODE,
-       s.DISPLAYNAME              AS STATUSNAME,
+       s.STATUSDESC,
        i.DUEDATE,
        i.QUANTITY,
        i.UOMCODE,
+       u.UOMDESC,
        i.ESTCOST,
        i.CURRENCYCODE,
        i.ASSIGNEDUSER,
@@ -56,33 +58,36 @@ SELECT i.RSN,
        i.STAMPDATE,
        i.STAMPUSER,
        i.VERSIONNO
-FROM   TG$ITEM_TAB001     i
-JOIN   TG$LIST_TAB001     l ON l.RSN  = i.LISTRSN
-JOIN   TG$PRIORITY_TAB001 p ON p.CODE = i.PRIORITYCODE
-JOIN   TG$STATUS_TAB001   s ON s.CODE = i.STATUSCODE
-LEFT   JOIN TG$CATEGORY_TAB001 c ON c.CODE = i.CATEGORYCODE
+FROM   TG$ITEM_TAB             i
+JOIN   TG$LIST_TAB             l ON l.RSN          = i.LISTRSN
+JOIN   TG$VALID_PRIORITY_TAB   p ON p.PRIORITYCODE = i.PRIORITYCODE
+JOIN   TG$VALID_STATUS_TAB     s ON s.STATUSCODE   = i.STATUSCODE
+LEFT   JOIN TG$VALID_CATEGORY_TAB c ON c.CATEGORYCODE = i.CATEGORYCODE
+LEFT   JOIN TG$VALID_UOM_TAB   u ON u.UOMCODE      = i.UOMCODE
 WHERE  i.ISDELETED = 'N';
 
 -- ----------------------------------------------------------------------------
--- TG$DUE_VW001 - open items with due dates, ordered by urgency
+-- TG$DUE_VW - open items with due dates, ordered by priority then due date
 -- ----------------------------------------------------------------------------
-CREATE OR REPLACE VIEW TG$DUE_VW001 AS
+CREATE OR REPLACE VIEW TG$DUE_VW AS
 SELECT RSN,
        ACCESSCODE,
        ITEMCODE,
        ITEMNAME,
        PRIORITYCODE,
-       PRIORITYNAME,
+       PRIORITYDESC,
        PRIORITYNO,
        PRIORITYCOLOR,
        STATUSCODE,
-       STATUSNAME,
+       STATUSDESC,
        DUEDATE,
        QUANTITY,
        UOMCODE,
+       UOMDESC,
        ASSIGNEDUSER,
        ISREMINDER,
        REMINDERDATE
-FROM   TG$ITEM_VW001
+FROM   TG$ITEM_VW
 WHERE  DUEDATE IS NOT NULL
-AND    STATUSCODE NOT IN ('DONE', 'CANCELLED', 'ARCHIVED');
+AND    STATUSDESC NOT IN ('Done', 'Cancelled', 'Archived')
+ORDER  BY PRIORITYNO, DUEDATE;
